@@ -1,0 +1,32 @@
+name: Build DOTX DX-1009N
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    steps:
+      - name: Install dependencies
+        run: |
+          apt update
+          apt install -y make gcc g++ pkg-config bison flex libboost-dev patch \
+            bzip2 curl ca-certificates xxd python-is-python3 libjson-c-dev \
+            zlib1g-dev git
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build firmware
+        run: make CI=1 MACHINE=DOTX_DX_1009N
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dotx-dx-1009n-512k
+          path: output/*.bin
+          if-no-files-found: error
