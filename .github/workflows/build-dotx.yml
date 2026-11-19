@@ -1,32 +1,58 @@
-name: Build DOTX DX-1009N
+name: Build DOTX DX-1009N & KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1
+
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/**'
+      - 'machine/**'
+      - 'installer/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: debian:trixie
+    container: debian:trixie
+    strategy:
+      fail-fast: false
+      matrix:
+        machine:
+          - KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1
+          - DOTX_DX_1009N
     steps:
-      - name: Install dependencies
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
         run: |
-          apt update
-          apt install -y make gcc g++ pkg-config bison flex libboost-dev patch \
-            bzip2 curl ca-certificates xxd python-is-python3 libjson-c-dev \
-            zlib1g-dev git
+          apt-get update
+          apt-get install -y make gcc g++ pkg-config bison flex libboost-dev \
+            patch bzip2 curl ca-certificates xxd python-is-python3 \
+            libjson-c-dev zlib1g-dev
 
-      - uses: actions/checkout@v6
+      - name: Cache SDCC toolchain
+        uses: actions/cache@v4
         with:
-          fetch-depth: 0
+          path: toolchain
+          key: sdcc-${{ hashFiles('sdcc/*', 'Makefile') }}
 
-      - name: Build firmware
-        run: make CI=1 MACHINE=DOTX_DX_1009N
+      - name: Build firmware (chip image)
+        run: make CI=1 MACHINE=${{ matrix.machine }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dotx-dx-1009n-512k
-          path: output/*.bin
-          if-no-files-found: error
+      - name: Build OEM web upgrade image
+        run: make -C installer
+
+      - name: Stage artifacts with machine suffix
+        run: |
+          mkdir -p stage
+          for f in output/rtlplayground-*.bin; do
+            [ -e "$f" ] || continue
+            cp "$f" "stage/$(basename "$f" .bin)_${{ matrix.machine }}.bin"
+          done
+          cp installer/output/rtlplayground_oem_upgrade.bin \
+             "stage/rtlplayground_oem_upgrade_${{ matrix.machine }}.bin"
+          ls -l stage
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
