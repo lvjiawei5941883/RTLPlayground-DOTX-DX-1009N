@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '.github/workflows/**'
+      - '.github/workflows/build.yml'
       - 'machine/**'
+      - 'sdcc/**'
       - 'installer/**'
 
 permissions:
@@ -19,10 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         machine:
+          # keepLINK KP-9000-9XHML-X，PCB 丝印 2M-PCB23-V3.1（管理页报 V3.1）
           - KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1
+          # DOTX DX-1009N，PCB-SWTG118AS-V1.0-11430，512K flash，只能编程器刷
           - DOTX_DX_1009N
+          # 兮克 SKS3200M-8GPY1XF，PCB-SWTG118AS-V2.1-17462，备用，暂不刷可注释
+          - XIKESTOR_SKS3200M_8GPY1XF
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install build dependencies
         run: |
@@ -31,28 +37,65 @@ jobs:
             patch bzip2 curl ca-certificates xxd python-is-python3 \
             libjson-c-dev zlib1g-dev
 
-      - name: Cache SDCC toolchain
+      - name: Cache patched SDCC toolchain
         uses: actions/cache@v4
         with:
           path: toolchain
-          key: sdcc-${{ hashFiles('sdcc/*', 'Makefile') }}
+          key: sdcc-${{ hashFiles('sdcc/*') }}
 
-      - name: Build firmware (chip image)
+      - name: Build firmware image (512 KiB full flash)
         run: make CI=1 MACHINE=${{ matrix.machine }}
 
-      - name: Build OEM web upgrade image
+      - name: Build OEM web-installer image
         run: make -C installer
 
-      - name: Stage artifacts with machine suffix
+      - name: Stage artifacts
         run: |
+          set -e
           mkdir -p stage
-          for f in output/rtlplayground-*.bin; do
-            [ -e "$f" ] || continue
-            cp "$f" "stage/$(basename "$f" .bin)_${{ matrix.machine }}.bin"
-          done
+          cp output/${{ matrix.machine }}/rtlplayground-*.bin stage/
           cp installer/output/rtlplayground_oem_upgrade.bin \
              "stage/rtlplayground_oem_upgrade_${{ matrix.machine }}.bin"
           ls -l stage
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
+        with:
+          name: fw-${{ matrix.machine }}
+          path: stage/*.bin
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List files
+        run: ls -l artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: RTLPlayground build ${{ github.run_number }}
+          make_latest: true
+          body: |
+            Auto build from commit `${{ github.sha }}` (run #${{ github.run_number }})
+
+            Machines: `KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1`, `DOTX_DX_1009N`, `XIKESTOR_SKS3200M_8GPY1XF`
+
+            | 文件 | 用途 |
+            | --- | --- |
+            | `rtlplayground-v*-<MACHINE>.bin` | 524288 B 整片镜像：编程器/SOIC 夹直刷；已是 RTLPlayground 的设备用它网页升级 |
+            | `rtlplayground_oem_upgrade_<MACHINE>.bin` | 原厂固件网页升级专用，只在原厂 Web 界面刷一次；已是 RTLPlayground 的设备不要用 |
+
+            首次刷入前请用编程器完整备份原厂 512 KiB 整片镜像。
+          files: artifacts/*.bin
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
