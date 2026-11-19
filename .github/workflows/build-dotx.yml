@@ -31,6 +31,10 @@ jobs:
           # 兮克 SKS3200M-8GPY1XF，PCB-SWTG118AS-V2.1-17462，2M flash，备用，暂不刷可注释
           - machine: XIKESTOR_SKS3200M_8GPY1XF
             oem: true
+          # .11：主板丝印 FG-4GT-2SX / FG-4GT-2SX_V2.0，平台 SWGT024AS v2.0，RTL8372N，P25Q32SH 4MB flash
+          # 原厂固件为非网管版本（无 Web 界面），首次刷入只能靠编程器/SOIC 夹 → oem=false
+          - machine: SWGT024_V2_0_UNMANAGED
+            oem: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,7 +99,7 @@ jobs:
           body: |
             Auto build from commit `${{ github.sha }}` (run #${{ github.run_number }})
 
-            Machines: `KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1`, `DOTX_DX_1009N`, `XIKESTOR_SKS3200M_8GPY1XF`
+            Machines: `KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1`, `DOTX_DX_1009N`, `XIKESTOR_SKS3200M_8GPY1XF`, `SWGT024_V2_0_UNMANAGED`
 
             | 文件 | 用途 |
             | --- | --- |
