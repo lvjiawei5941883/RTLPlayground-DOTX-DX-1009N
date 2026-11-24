@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '.github/workflows/build.yml'
+      - '.github/workflows/build-dotx.yml'
       - 'machine/**'
       - 'sdcc/**'
       - 'installer/**'
@@ -43,7 +43,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y make gcc g++ pkg-config bison flex libboost-dev \
-            patch bzip2 curl ca-certificates xxd python-is-python3 \
+            patch bzip2 curl ca-certificates xxd jq python-is-python3 \
             libjson-c-dev zlib1g-dev
 
       - name: Cache patched SDCC toolchain
