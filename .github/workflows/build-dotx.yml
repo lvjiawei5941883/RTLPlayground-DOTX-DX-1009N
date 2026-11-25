@@ -3,12 +3,49 @@ name: Build DOTX KEEPLINK FG-4GT-2SX
 # 只保留手动/被 sync-upstream.yml 调用触发，避免 merge 上游时重复构建
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: '源码与上次构建相同时也强制重编'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  # 先比对当前 commit 与上次 release 记录的 commit，避免手动重复 dispatch 生成空 diff 的 release
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run_build: ${{ steps.check.outputs.run_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare with last release commit
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -u
+          cur="${{ github.sha }}"
+          prev=$(gh release view --json body -q .body 2>/dev/null | grep -oE '\b[0-9a-f]{40}\b' | head -1 || true)
+          echo "current  = $cur"
+          echo "previous = ${prev:-<none>}"
+          if [ "${FORCE:-false}" != "true" ] && [ -n "$prev" ] && [ "$prev" = "$cur" ]; then
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+            echo "源码与上次构建一致，跳过编译（需要重编请手动勾选 force）"
+          else
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: gate
+    if: needs.gate.outputs.run_build == 'true'
     runs-on: ubuntu-latest
     container: debian:trixie
     strategy:
@@ -91,24 +128,67 @@ jobs:
           echo "tag=$(TZ=Asia/Shanghai date +'%Y%m%d-%H%M')"        >> "$GITHUB_OUTPUT"
           echo "display=$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')" >> "$GITHUB_OUTPUT"
 
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build release body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -u
+          cur="${{ github.sha }}"
+          prev=$(gh release view --json body -q .body 2>/dev/null | grep -oE '\b[0-9a-f]{40}\b' | head -1 || true)
+
+          {
+            echo "编译时间 \`${{ steps.stamp.outputs.display }}\`（北京时间）　源码 \`${cur:0:7}\`"
+            echo ""
+            if [ -n "$prev" ] && git cat-file -e "${prev}^{commit}" 2>/dev/null; then
+              n=$(git rev-list --count "$prev..$cur")
+              if [ "$n" -gt 0 ]; then
+                echo "### 相比上次构建 \`${prev:0:7}\`：$n 个提交"
+                echo ""
+                echo '```'
+                git log --oneline --no-merges "$prev..$cur" | head -20
+                if [ "$n" -gt 20 ]; then
+                  echo "... 另有 $((n - 20)) 个提交未列出"
+                fi
+                echo '```'
+              else
+                echo "源码与上次构建 \`${prev:0:7}\` 一致，本次仅重新编译。"
+              fi
+            else
+              echo "### 首次生成，无对比基线"
+              echo ""
+              echo '```'
+              git log --oneline --no-merges -10 "$cur"
+              echo '```'
+            fi
+            echo ""
+            echo "Machines: \`KEEPLINK_KP_9000_9XHML_X_V3_1\`, \`DOTX_DX_1009N\`, \`XIKESTOR_SKS3200M_8GPY1XF\`, \`SWGT024_V2_0_UNMANAGED\`"
+            echo ""
+            echo "| 文件 | 用途 |"
+            echo "| --- | --- |"
+            echo "| \`rtlplayground-v*-<MACHINE>.bin\` | 524288 B 整片镜像：编程器/SOIC 夹直刷；已是 RTLPlayground 的设备用它网页升级 |"
+            echo "| \`rtlplayground_oem_upgrade_<MACHINE>.bin\` | 原厂固件网页升级专用，只在原厂 Web 界面刷一次；已是 RTLPlayground 的设备不要用。仅 Managed=Yes 机型产出 |"
+            echo ""
+            echo "首次刷入前请用编程器完整备份原厂 512 KiB 整片镜像。"
+            echo ""
+            echo "<!-- base-commit: $cur -->"
+          } > body.md
+
+          echo "----- body.md 预览 -----"
+          cat body.md
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.stamp.outputs.tag }}
           name: ${{ steps.stamp.outputs.display }} 编译
           make_latest: true
-          body: |
-            编译时间 `${{ steps.stamp.outputs.display }}`（北京时间）
-            源码 commit `${{ github.sha }}`
-
-            Machines: `KEEPLINK_KP_9000_9XHML_X_V3_1`, `DOTX_DX_1009N`, `XIKESTOR_SKS3200M_8GPY1XF`, `SWGT024_V2_0_UNMANAGED`
-
-            | 文件 | 用途 |
-            | --- | --- |
-            | `rtlplayground-v*-<MACHINE>.bin` | 524288 B 整片镜像：编程器/SOIC 夹直刷；已是 RTLPlayground 的设备用它网页升级 |
-            | `rtlplayground_oem_upgrade_<MACHINE>.bin` | 原厂固件网页升级专用，只在原厂 Web 界面刷一次；已是 RTLPlayground 的设备不要用。仅 Managed=Yes 机型产出 |
-
-            首次刷入前请用编程器完整备份原厂 512 KiB 整片镜像。
+          body_path: body.md
           files: artifacts/*.bin
           fail_on_unmatched_files: true
           draft: false
