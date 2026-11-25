@@ -1,4 +1,4 @@
-name: Build DOTX DX-1009N & KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1
+name: Build DOTX KEEPLINK FG-4GT-2SX
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
         include:
           # oem=true 表示该机型支持原厂 Web 界面升级（Managed=Yes 且 flash 足够）
           # keepLINK KP-9000-9XHML-X，PCB 丝印 2M-PCB23-V3.1（管理页报 V3.1），2M flash
-          - machine: KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1
+          - machine: KEEPLINK_KP_9000_9XHML_X_V3_1
             oem: true
           # DOTX DX-1009N，PCB-SWTG118AS-V1.0-11430，512K flash，只能编程器刷
           # oem=false：540KB 的升级包物理上装不进 512KB flash，不产出该文件
