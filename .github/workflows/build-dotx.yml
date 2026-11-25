@@ -113,6 +113,15 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # 必须先 checkout：actions/checkout 默认 clean=true 会 git clean -ffdx 清空工作区，
+      # 若放在 Download artifacts 之后执行，会把刚下载的 artifacts/ 里的 bin 全部删掉，
+      # 导致 Publish release 报 "Pattern 'artifacts/*.bin' does not match any files"
+      - name: Checkout (full history for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -127,11 +136,6 @@ jobs:
         run: |
           echo "tag=$(TZ=Asia/Shanghai date +'%Y%m%d-%H%M')"        >> "$GITHUB_OUTPUT"
           echo "display=$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout (full history for changelog)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Build release body
         env:
