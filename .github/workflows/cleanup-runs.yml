@@ -1,0 +1,53 @@
+name: Cleanup old workflow runs
+
+on:
+  schedule:
+    - cron: '30 19 * * *'     # UTC 19:30 = 北京时间 03:30，排在同步/构建之后
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      KEEP_DAYS: '1'     # 保留最近 1 天（当天 + 昨天边界）的运行记录
+      MIN_KEEP: '10'     # 无论如何至少保留最近 10 条，防呆
+    steps:
+      - name: Delete runs older than cutoff
+        run: |
+          set -uo pipefail
+          cutoff=$(TZ=Asia/Shanghai date -d "-${KEEP_DAYS} day" -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "cutoff (UTC) = $cutoff"
+
+          gh run list --limit 500 \
+            --json databaseId,createdAt,status,conclusion,workflowName \
+            --jq '.[] | select(.status != "in_progress" and .status != "queued")
+                       | "\(.databaseId)\t\(.createdAt)\t\(.workflowName)"' > /tmp/all.tsv
+
+          total=$(wc -l < /tmp/all.tsv)
+          echo "candidate runs: $total"
+          {
+            echo "### Cleanup old runs"
+            echo ""
+            echo "- cutoff: \`$cutoff\`"
+            echo "- listed: $total"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # gh run list 是最近的在前，先跳过最前面 MIN_KEEP 条做保底
+          tail -n +$((MIN_KEEP + 1)) /tmp/all.tsv \
+            | awk -F'\t' -v c="$cutoff" '$2 < c {print $1"\t"$3}' > /tmp/del.tsv
+
+          n=$(wc -l < /tmp/del.tsv)
+          echo "to delete: $n"
+          echo "- deleted: $n" >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS=$'\t' read -r id name; do
+            [ -z "$id" ] && continue
+            echo "delete run $id ($name)"
+            gh run delete "$id" || echo "  skip $id"
+          done < /tmp/del.tsv

@@ -1,13 +1,8 @@
 name: Build DOTX KEEPLINK FG-4GT-2SX
 
+# 只保留手动/被 sync-upstream.yml 调用触发，避免 merge 上游时重复构建
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/build-dotx.yml'
-      - 'machine/**'
-      - 'sdcc/**'
-      - 'installer/**'
 
 permissions:
   contents: write
@@ -90,16 +85,23 @@ jobs:
       - name: List files
         run: ls -l artifacts
 
+      - name: Stamp release name (Asia/Shanghai)
+        id: stamp
+        run: |
+          echo "tag=$(TZ=Asia/Shanghai date +'%Y%m%d-%H%M')"        >> "$GITHUB_OUTPUT"
+          echo "display=$(TZ=Asia/Shanghai date +'%Y-%m-%d %H:%M')" >> "$GITHUB_OUTPUT"
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: RTLPlayground build ${{ github.run_number }}
+          tag_name: ${{ steps.stamp.outputs.tag }}
+          name: ${{ steps.stamp.outputs.display }} 编译
           make_latest: true
           body: |
-            Auto build from commit `${{ github.sha }}` (run #${{ github.run_number }})
+            编译时间 `${{ steps.stamp.outputs.display }}`（北京时间）
+            源码 commit `${{ github.sha }}`
 
-            Machines: `KEEPLINK_KP_9000_9XHML_X_2M_PCB23_V3_1`, `DOTX_DX_1009N`, `XIKESTOR_SKS3200M_8GPY1XF`, `SWGT024_V2_0_UNMANAGED`
+            Machines: `KEEPLINK_KP_9000_9XHML_X_V3_1`, `DOTX_DX_1009N`, `XIKESTOR_SKS3200M_8GPY1XF`, `SWGT024_V2_0_UNMANAGED`
 
             | 文件 | 用途 |
             | --- | --- |
@@ -111,3 +113,24 @@ jobs:
           fail_on_unmatched_files: true
           draft: false
           prerelease: false
+
+      # 只保留最近 KEEP 个 release，旧的连 tag 一起删
+      - name: Prune old releases (keep latest 2)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          KEEP: '2'
+        run: |
+          set -uo pipefail
+          gh release list --limit 100 --json tagName,createdAt \
+            --jq "sort_by(.createdAt) | reverse | .[$KEEP:] | .[].tagName" > /tmp/old.txt
+          if [ ! -s /tmp/old.txt ]; then
+            echo "nothing to prune"
+            exit 0
+          fi
+          while read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "deleting release $tag"
+            gh release delete "$tag" --yes --cleanup-tag || echo "skip $tag"
+          done < /tmp/old.txt

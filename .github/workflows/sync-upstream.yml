@@ -1,0 +1,86 @@
+name: Sync upstream and build
+
+on:
+  schedule:
+    - cron: '0 18 * * *'      # UTC 18:00 = 北京时间 02:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync upstream
+        id: sync
+        run: |
+          set -eo pipefail
+          before=$(git rev-parse HEAD)
+
+          git remote add upstream https://github.com/logicog/RTLPlayground.git 2>/dev/null || true
+          git fetch --no-tags upstream main
+
+          if ! git merge --no-edit upstream/main -m "Sync upstream/main ($(TZ=Asia/Shanghai date +%F))"; then
+            for f in $(git diff --name-only --diff-filter=U); do
+              case "$f" in
+                .github/workflows/build.yml)
+                  git rm -q -f "$f" ;;
+                *)
+                  echo "::error::unexpected conflict in $f -- 需人工处理"
+                  git merge --abort
+                  exit 1 ;;
+              esac
+            done
+            git commit --no-edit
+          fi
+
+          # fork 里永不保留上游 build.yml：它不产固件，只会在 Actions 里刷屏
+          if [ -e .github/workflows/build.yml ]; then
+            git rm -q .github/workflows/build.yml
+            git commit -m "chore: drop upstream build.yml (no artifacts, useless in this fork)"
+          fi
+
+          if [ "$(git rev-parse HEAD)" = "$before" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "上游无更新，跳过构建"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git log --oneline "$before"..HEAD
+          fi
+
+      - name: Push
+        if: steps.sync.outputs.changed == 'true'
+        run: git push origin HEAD:main
+
+      - name: Trigger firmware build
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run build-dotx.yml --ref main
+
+      - name: Summary
+        run: |
+          {
+            echo "### Sync result"
+            echo ""
+            echo "- changed: \`${{ steps.sync.outputs.changed }}\`"
+            echo "- head: \`$(git log -1 --format='%h %s')\`"
+          } >> "$GITHUB_STEP_SUMMARY"
