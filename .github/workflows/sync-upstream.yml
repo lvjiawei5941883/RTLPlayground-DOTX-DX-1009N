@@ -42,6 +42,12 @@ jobs:
               case "$f" in
                 .github/workflows/build.yml)
                   git rm -q -f "$f" ;;
+                machine/machines.json)
+                  # 机型表冲突：整份取上游最新版（不丢上游任何新机型），
+                  # fork 自建机型稍后由下方 jq 步骤幂等补回
+                  git checkout --theirs -- "$f"
+                  git add "$f"
+                  echo "machines.json conflict -> adopt upstream version" ;;
                 *)
                   echo "::error::unexpected conflict in $f -- 需人工处理"
                   git merge --abort
@@ -55,6 +61,18 @@ jobs:
           if [ -e .github/workflows/build.yml ]; then
             git rm -q .github/workflows/build.yml
             git commit -m "chore: drop upstream build.yml (no artifacts, useless in this fork)"
+          fi
+
+          # 幂等补回 fork 自建机型：上游无论怎么改 machines.json，这里都能兜住
+          if ! jq -e 'any(.[]; .machine == "FG_4GT_2SX_V1_0")' machine/machines.json > /dev/null; then
+            jq '. + [{"machine":"FG_4GT_2SX_V1_0","friendly_name":"广睿杰 GRJ-4GT-2SX V1.0","pcb":"FG_4GT_2SX_V1_0"}]' \
+              machine/machines.json > /tmp/machines.json.tmp
+            mv /tmp/machines.json.tmp machine/machines.json
+            git add machine/machines.json
+            git commit -m "chore: re-add FG_4GT_2SX_V1_0 to machines.json"
+            echo "已补回 FG_4GT_2SX_V1_0"
+          else
+            echo "FG_4GT_2SX_V1_0 已存在，跳过"
           fi
 
           if [ "$(git rev-parse HEAD)" = "$before" ]; then
