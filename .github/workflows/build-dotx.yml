@@ -65,7 +65,13 @@ jobs:
             oem: true
           # .11：主板丝印 FG-4GT-2SX / FG-4GT-2SX_V2.0，平台 SWGT024AS v2.0，RTL8372N，P25Q32SH 4MB flash
           # 原厂固件为非网管版本（无 Web 界面），首次刷入只能靠编程器/SOIC 夹 → oem=false
-          - machine: SWGT024_V2_0_UNMANAGED
+          #- machine: SWGT024_V2_0_UNMANAGED
+          # oem: false
+          # .11 自建机型：广睿杰 GRJ-4GT-2SX，丝印 FG-4GT-2SX_V2.0 / PCB 17452，RTL8372N，P25Q32SH 4MB flash
+          # 与上游 FG_4GT_2SX_V2_0 的区别仅在 SFP/reset 引脚批次：
+          #   左笼 detect GPIO30、右笼 detect GPIO50、reset GPIO54；LED 段沿用上游 v2.0（本板实测灯正常）
+          # 原厂固件为非网管版本（无 Web 界面），首次刷入只能靠编程器/SOIC 夹 → oem=false
+          - machine: FG_4GT_2SX_V1_0
             oem: false
     steps:
       - name: Checkout
@@ -171,7 +177,7 @@ jobs:
               echo '```'
             fi
             echo ""
-            echo "Machines: \`KEEPLINK_KP_9000_9XHML_X_V3_1\`, \`DOTX_DX_1009N\`, \`XIKESTOR_SKS3200M_8GPY1XF\`, \`SWGT024_V2_0_UNMANAGED\`"
+            echo "Machines: \`KEEPLINK_KP_9000_9XHML_X_V3_1\`, \`DOTX_DX_1009N\`, \`XIKESTOR_SKS3200M_8GPY1XF\`, \`SWGT024_V2_0_UNMANAGED\`, \`FG_4GT_2SX_V1_0\`"
             echo ""
             echo "| 文件 | 用途 |"
             echo "| --- | --- |"
